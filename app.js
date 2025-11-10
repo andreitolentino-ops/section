@@ -186,373 +186,6 @@ function signOutOnClose(){
 window.addEventListener('beforeunload', signOutOnClose);
 window.addEventListener('pagehide', signOutOnClose);
 
-// -------------------- Auto Logout Functions --------------------
-function resetInactivityTimer() {
-  lastActivity = Date.now();
-  
-  // Clear existing timers
-  if (inactivityTimer) {
-    clearTimeout(inactivityTimer);
-  }
-  if (warningTimer) {
-    clearTimeout(warningTimer);
-  }
-  
-  // Close warning modal if open
-  if (warningModal) {
-    closeInactivityWarning();
-  }
-  
-  // Only set timer if user is logged in
-  if (!currentUser) return;
-  
-  // Set warning timer (shows warning before actual logout)
-  warningTimer = setTimeout(() => {
-    if (currentUser) {
-      showInactivityWarning();
-    }
-  }, INACTIVITY_TIMEOUT - WARNING_TIME);
-  
-  // Set main inactivity timer
-  inactivityTimer = setTimeout(() => {
-    if (currentUser) {
-      performAutoLogout();
-    }
-  }, INACTIVITY_TIMEOUT);
-}
-
-function showInactivityWarning() {
-  if (!currentUser) return;
-  
-  const modalContent = `
-    <div class="bg-white rounded-xl p-6 max-w-md mx-auto shadow-2xl border-2 border-amber-200">
-      <div class="text-center">
-        <div class="text-6xl mb-4">⏰</div>
-        <h3 class="text-xl font-bold text-amber-800 mb-3">Session Timeout Warning</h3>
-        <p class="text-slate-600 mb-4">
-          You've been inactive for a while. For security reasons, you'll be automatically logged out in:
-        </p>
-        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-          <div id="inactivityCountdown" class="text-3xl font-bold text-amber-600">
-            ${Math.ceil(WARNING_TIME / 1000)}s
-          </div>
-          <div class="text-sm text-amber-600 mt-1">seconds remaining</div>
-        </div>
-        <div class="space-y-3">
-          <button 
-            id="stayLoggedInBtn" 
-            class="w-full px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-colors"
-          >
-            ✅ Stay Logged In
-          </button>
-          <button 
-            id="logoutNowBtn" 
-            class="w-full px-6 py-3 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 transition-colors"
-          >
-            🚪 Logout Now
-          </button>
-        </div>
-        <div class="text-xs text-slate-500 mt-3">
-          Click anywhere or press any key to stay logged in
-        </div>
-      </div>
-    </div>
-  `;
-  
-  // Create and show modal
-  warningModal = document.createElement('div');
-  warningModal.id = 'inactivityWarningModal';
-  warningModal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4';
-  warningModal.innerHTML = modalContent;
-  document.body.appendChild(warningModal);
-  
-  // Add event listeners
-  const stayLoggedInBtn = warningModal.querySelector('#stayLoggedInBtn');
-  const logoutNowBtn = warningModal.querySelector('#logoutNowBtn');
-  const countdownEl = warningModal.querySelector('#inactivityCountdown');
-  
-  if (stayLoggedInBtn) {
-    stayLoggedInBtn.addEventListener('click', () => {
-      resetInactivityTimer();
-      showToast('👍 Session extended', 'success');
-    });
-  }
-  
-  if (logoutNowBtn) {
-    logoutNowBtn.addEventListener('click', () => {
-      performAutoLogout();
-    });
-  }
-  
-  // Countdown timer
-  let remainingTime = Math.ceil(WARNING_TIME / 1000);
-  const countdownInterval = setInterval(() => {
-    remainingTime--;
-    if (countdownEl) {
-      countdownEl.textContent = `${remainingTime}s`;
-    }
-    
-    if (remainingTime <= 0) {
-      clearInterval(countdownInterval);
-    }
-  }, 1000);
-  
-  // Store interval reference for cleanup
-  warningModal.countdownInterval = countdownInterval;
-  
-  // Close on any activity
-  const closeOnActivity = () => {
-    resetInactivityTimer();
-    showToast('👍 Session extended', 'success');
-  };
-  
-  // Add temporary event listeners for activity
-  document.addEventListener('mousemove', closeOnActivity, { once: true });
-  document.addEventListener('keydown', closeOnActivity, { once: true });
-  document.addEventListener('click', closeOnActivity, { once: true });
-}
-
-function closeInactivityWarning() {
-  if (warningModal) {
-    // Clear countdown interval
-    if (warningModal.countdownInterval) {
-      clearInterval(warningModal.countdownInterval);
-    }
-    
-    // Remove modal
-    warningModal.remove();
-    warningModal = null;
-  }
-}
-
-async function performAutoLogout() {
-  try {
-    // Close any open modals
-    closeInactivityWarning();
-    closeModal();
-    
-    // Sign out from Firebase
-    await auth.signOut();
-    
-    // Clear application state
-    selectedPatientId = null;
-    patients = [];
-    renderPatients([]);
-    
-    // Show logout notification
-    showToast('🔒 Automatically logged out due to inactivity', 'info', 5000);
-    
-    // Show login modal
-    const loginModalEl = document.getElementById('loginModal');
-    if (loginModalEl) {
-      loginModalEl.classList.remove('hidden');
-    }
-    
-    console.log('🔒 Auto logout completed due to inactivity');
-    
-  } catch (error) {
-    console.error('Auto logout failed:', error);
-    showToast('❌ Auto logout failed', 'error');
-  }
-}
-
-function startInactivityTracking() {
-  // Only start if user is logged in
-  if (!currentUser) return;
-  
-  // List of events that indicate user activity
-  const activityEvents = [
-    'mousedown',
-    'mousemove', 
-    'keypress',
-    'keydown',
-    'scroll',
-    'touchstart',
-    'click',
-    'focus',
-    'blur'
-  ];
-  
-  // Add event listeners for user activity
-  activityEvents.forEach(event => {
-    document.addEventListener(event, resetInactivityTimer, { passive: true });
-  });
-  
-  // Start the timer
-  resetInactivityTimer();
-  
-  // Show auto-logout indicator
-  const indicator = document.getElementById('autoLogoutIndicator');
-  if (indicator) {
-    indicator.classList.remove('hidden');
-  }
-  
-  console.log('✅ Auto logout tracking started - timeout:', INACTIVITY_TIMEOUT/60000, 'minutes');
-}
-
-function stopInactivityTracking() {
-  // Clear timers
-  if (inactivityTimer) {
-    clearTimeout(inactivityTimer);
-    inactivityTimer = null;
-  }
-  if (warningTimer) {
-    clearTimeout(warningTimer);
-    warningTimer = null;
-  }
-  
-  // Close warning modal
-  closeInactivityWarning();
-  
-  // Hide auto-logout indicator
-  const indicator = document.getElementById('autoLogoutIndicator');
-  if (indicator) {
-    indicator.classList.add('hidden');
-  }
-  
-  console.log('🛑 Auto logout tracking stopped');
-}
-
-function showAutoLogoutSettings() {
-  const currentTimeout = INACTIVITY_TIMEOUT / (60 * 1000); // Convert to minutes
-  
-  const modalContent = `
-    <div class="bg-white rounded-xl p-6 max-w-md mx-auto shadow-2xl border border-slate-200">
-      <div class="text-center">
-        <div class="text-4xl mb-4">⏰</div>
-        <h3 class="text-xl font-bold text-slate-800 mb-3">Auto-Logout Settings</h3>
-        <p class="text-slate-600 mb-4">
-          Configure how long you can be inactive before being automatically logged out for security.
-        </p>
-        
-        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
-          <label class="block text-sm font-semibold text-slate-700 mb-2">
-            Inactivity Timeout (minutes)
-          </label>
-          <select id="timeoutSelect" class="w-full rounded-lg px-3 py-2 border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-            <option value="5" ${currentTimeout === 5 ? 'selected' : ''}>5 minutes</option>
-            <option value="10" ${currentTimeout === 10 ? 'selected' : ''}>10 minutes</option>
-            <option value="15" ${currentTimeout === 15 ? 'selected' : ''}>15 minutes (recommended)</option>
-            <option value="30" ${currentTimeout === 30 ? 'selected' : ''}>30 minutes</option>
-            <option value="60" ${currentTimeout === 60 ? 'selected' : ''}>1 hour</option>
-            <option value="120" ${currentTimeout === 120 ? 'selected' : ''}>2 hours</option>
-          </select>
-          <div class="text-xs text-slate-500 mt-2">
-            You'll receive a warning 2 minutes before logout
-          </div>
-        </div>
-        
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-          <div class="text-xs text-blue-600">
-            ℹ️ <strong>Security Note:</strong> Shorter timeouts provide better security but may interrupt your workflow. Healthcare environments typically use 15-30 minute timeouts.
-          </div>
-        </div>
-        
-        <div class="space-y-3">
-          <button 
-            id="saveTimeoutBtn" 
-            class="w-full px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-colors"
-          >
-            ✅ Save Settings
-          </button>
-          <button 
-            id="cancelTimeoutBtn" 
-            class="w-full px-6 py-3 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-  
-  // Show modal using existing modal system
-  if (typeof showModal === 'function') {
-    showModal(modalContent);
-    
-    // Add event listeners
-    const saveBtn = document.getElementById('saveTimeoutBtn');
-    const cancelBtn = document.getElementById('cancelTimeoutBtn');
-    const timeoutSelect = document.getElementById('timeoutSelect');
-    
-    if (saveBtn) {
-      saveBtn.addEventListener('click', () => {
-        const newTimeout = parseInt(timeoutSelect.value);
-        updateAutoLogoutTimeout(newTimeout);
-        closeModal();
-        showToast(`✅ Auto-logout timeout updated to ${newTimeout} minutes`, 'success');
-      });
-    }
-    
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', () => {
-        closeModal();
-      });
-    }
-  } else {
-    // Fallback if modal system not available
-    const newTimeout = prompt(`Current auto-logout timeout: ${currentTimeout} minutes\n\nEnter new timeout in minutes (5, 10, 15, 30, 60, 120):`, currentTimeout);
-    if (newTimeout && !isNaN(newTimeout)) {
-      const timeout = parseInt(newTimeout);
-      if ([5, 10, 15, 30, 60, 120].includes(timeout)) {
-        updateAutoLogoutTimeout(timeout);
-        showToast(`✅ Auto-logout timeout updated to ${timeout} minutes`, 'success');
-      } else {
-        showToast('❌ Invalid timeout. Please choose: 5, 10, 15, 30, 60, or 120 minutes', 'error');
-      }
-    }
-  }
-}
-
-function updateAutoLogoutTimeout(minutes) {
-  // Update the global timeout values
-  INACTIVITY_TIMEOUT = minutes * 60 * 1000;
-  WARNING_TIME = Math.min(2 * 60 * 1000, INACTIVITY_TIMEOUT / 2); // Max 2 minutes or half of timeout
-  
-  // Save to localStorage for persistence
-  localStorage.setItem('autoLogoutTimeout', minutes.toString());
-  
-  // Restart tracking with new timeout if user is logged in
-  if (currentUser) {
-    stopInactivityTracking();
-    startInactivityTracking();
-  }
-  
-  console.log(`🔧 Auto-logout timeout updated to ${minutes} minutes`);
-}
-
-// Load saved timeout on page load
-function loadAutoLogoutSettings() {
-  const savedTimeout = localStorage.getItem('autoLogoutTimeout');
-  if (savedTimeout) {
-    const minutes = parseInt(savedTimeout);
-    if (!isNaN(minutes) && minutes > 0) {
-      INACTIVITY_TIMEOUT = minutes * 60 * 1000;
-      WARNING_TIME = Math.min(2 * 60 * 1000, INACTIVITY_TIMEOUT / 2); // Max 2 minutes or half of timeout
-      console.log(`⚙️ Loaded auto-logout timeout: ${minutes} minutes`);
-    }
-  }
-}
-
-// Load settings on page load
-loadAutoLogoutSettings();
-
-// Development/Demo function to test auto-logout (remove in production)
-window.testAutoLogout = function() {
-  if (!currentUser) {
-    showToast('❌ Please log in first to test auto-logout', 'error');
-    return;
-  }
-  
-  console.log('🧪 Testing auto-logout warning...');
-  showInactivityWarning();
-  showToast('🧪 Auto-logout warning triggered for testing', 'info');
-};
-
-// Add to browser console for easy testing
-console.log('🔧 Auto-logout system loaded. Test with: testAutoLogout()');
-console.log('⚙️ Current timeout:', INACTIVITY_TIMEOUT/60000, 'minutes');
-
 // -------------------- App state --------------------
 let currentUser = null;
 let currentRole = 'guest';
@@ -566,17 +199,6 @@ let isSaving = false;
 let departments = [];
 let beds = [];
 let selectedDepartment = null;
-
-// -------------------- Auto Logout System --------------------
-let inactivityTimer = null;
-let warningTimer = null;
-let warningModal = null;
-let lastActivity = Date.now();
-
-// Configuration (in milliseconds) - made mutable for settings
-let INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes of inactivity (default)
-let WARNING_TIME = 2 * 60 * 1000; // Show warning 2 minutes before logout
-const WARNING_COUNTDOWN = 60 * 1000; // Show countdown for last 60 seconds
 
 // -------------------- Helpers --------------------
 const $ = id => document.getElementById(id);
@@ -2484,10 +2106,6 @@ auth.onAuthStateChanged(async user => {
     
     // initialize departments and beds
     initializeSystemForUser();
-    
-    // Start auto logout tracking when user logs in
-    startInactivityTracking();
-    
   } else {
     currentRole = 'guest';
     renderUserBadge();
@@ -2495,9 +2113,6 @@ auth.onAuthStateChanged(async user => {
     // show login modal
     const loginModalEl = $('loginModal'); if(loginModalEl) loginModalEl.classList.remove('hidden');
     patients = []; renderPatients([]);
-    
-    // Stop auto logout tracking when user logs out
-    stopInactivityTracking();
   }
 
   // Update user menu UI elements (keeps things consistent, previously wired in another handler)
@@ -2616,27 +2231,6 @@ function applyRoleUI(){
     // Show ONLY allowed tabs for bednav users (dashboard, departments, patient info)
     const bednavAllowedTabs = ['tab-dashboard', 'tab-departments', 'tab-info'];
     bednavAllowedTabs.forEach(tabId => {
-      const allTabBtns = document.querySelectorAll(`[data-target="${tabId}"]`);
-      const tabPanel = document.getElementById(tabId);
-      
-      allTabBtns.forEach(btn => {
-        if(btn) {
-          btn.style.display = '';
-        }
-      });
-      
-      if(tabPanel) tabPanel.classList.remove('hidden');
-    });
-  } else {
-    // For admin, doctor, nurse, guest - show all tabs by default
-    const allTabs = [
-      'tab-dashboard', 'tab-id', 'tab-history', 'tab-physical', 'tab-assessment', 
-      'tab-labs', 'tab-meds', 'tab-messages', 'tab-vitals', 
-      'tab-nurse', 'tab-doctor', 'tab-admission', 'tab-plan', 'tab-staff', 
-      'tab-departments', 'tab-info'
-    ];
-    
-    allTabs.forEach(tabId => {
       const allTabBtns = document.querySelectorAll(`[data-target="${tabId}"]`);
       const tabPanel = document.getElementById(tabId);
       
@@ -3136,16 +2730,11 @@ class ClinicalMessagingSystem {
 
   showNotification(message) {
     // Browser notification if permission granted
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(`New ${message.type} message`, {
-          body: `From: ${message.from}\n${message.subject}`,
-          // Inline SVG data URI to avoid icon 404s
-          icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' rx='12' fill='%230ea5e9'/%3E%3Crect x='28' y='14' width='8' height='36' fill='white'/%3E%3Crect x='14' y='28' width='36' height='8' fill='white'/%3E%3C/svg%3E"
-        });
-      } catch (e) {
-        console.warn('Notification show failed:', e);
-      }
+    if (Notification.permission === 'granted') {
+      new Notification(`New ${message.type} message`, {
+        body: `From: ${message.from}\n${message.subject}`,
+        icon: '/favicon.ico'
+      });
     }
     
     // In-app notification
@@ -3380,8 +2969,12 @@ class ClinicalMessagingSystem {
       console.log('✅ Cancel reply button listener added');
     }
 
-    // Removed automatic Notification.requestPermission to comply with user-gesture requirements.
-    // Permission can be requested via the "Enable Notifications" button in the user menu.
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().then(permission => {
+        console.log('🔔 Notification permission:', permission);
+      });
+    }
     
     console.log('✅ All messaging event listeners setup complete');
   }
@@ -4084,101 +3677,6 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Apply initial role-based UI (will be updated when user logs in)
   applyRoleUI();
-  
-// Simple EMR Navigation System
-document.addEventListener('DOMContentLoaded', function() {
-  // Initialize simple EMR navigation
-  initializeEMRNavigation();
-});
-
-function initializeEMRNavigation() {
-  const navItems = document.querySelectorAll('.nav-item');
-  
-  navItems.forEach(item => {
-    item.addEventListener('click', function() {
-      const target = this.dataset.target;
-      switchEMRSection(target);
-      
-      // Update active nav item
-      navItems.forEach(nav => nav.classList.remove('active', 'bg-blue-50', 'text-blue-700', 'border-blue-200'));
-      this.classList.add('active', 'bg-blue-50', 'text-blue-700', 'border-blue-200');
-    });
-  });
-  
-  // Initialize with overview section
-  switchEMRSection('overview');
-}
-
-function switchEMRSection(sectionId) {
-  // Hide all content sections
-  const allSections = document.querySelectorAll('.chart-section');
-  allSections.forEach(section => section.classList.add('hidden'));
-  
-  // Show target section
-  const targetSection = document.getElementById(`content-${sectionId}`);
-  if (targetSection) {
-    targetSection.classList.remove('hidden');
-  }
-  
-  // Section-specific hooks
-  try {
-    if (sectionId === 'vitals' && typeof renderEnhancedVitalsChart === 'function') {
-      if (window.selectedPatientId) {
-        renderEnhancedVitalsChart(window.selectedPatientId);
-      }
-    }
-  } catch (e) {
-    console.warn('Section hook failed:', e);
-  }
-
-  // Update section header
-  updateEMRSectionHeader(sectionId);
-}
-
-function updateEMRSectionHeader(sectionId) {
-  const sectionTitle = document.getElementById('sectionTitle');
-  const sectionSubtitle = document.getElementById('sectionSubtitle');
-  
-  const sectionInfo = {
-    'overview': {
-      title: 'Patient Overview',
-      subtitle: 'Comprehensive patient information and recent activity'
-    },
-    'vitals': {
-      title: 'Vital Signs',
-      subtitle: 'Patient vital signs monitoring and trends'
-    },
-    'medications': {
-      title: 'Medications',
-      subtitle: 'Current medications, dosages, and administration'
-    },
-    'labs': {
-      title: 'Laboratory Results',
-      subtitle: 'Lab tests, results, and trending data'
-    },
-    'notes': {
-      title: 'Clinical Notes',
-      subtitle: 'Provider notes, assessments, and documentation'
-    },
-    'orders': {
-      title: 'Orders',
-      subtitle: 'Provider orders and care plans'
-    },
-    'imaging': {
-      title: 'Imaging Studies',
-      subtitle: 'Radiology and diagnostic imaging results'
-    },
-    'history': {
-      title: 'Medical History',
-      subtitle: 'Patient medical history and background'
-    }
-  };
-  
-  const info = sectionInfo[sectionId] || { title: 'Chart Section', subtitle: 'Patient information' };
-  
-  if (sectionTitle) sectionTitle.textContent = info.title;
-  if (sectionSubtitle) sectionSubtitle.textContent = info.subtitle;
-}
   
   // Initialize messaging system
   try {
@@ -5431,20 +4929,6 @@ function setupAdditionalButtonHandlers() {
                 <li>• High-risk medication warnings</li>
                 <li>• Emergency department bed tracking</li>
               </ul>
-            </div>
-            
-            <div class="bg-orange-50 p-4 rounded-lg">
-              <h3 class="font-bold text-orange-800 mb-2">🔒 Security & Auto-Logout</h3>
-              <ul class="text-sm text-orange-700 space-y-1">
-                <li>• Automatic logout after ${INACTIVITY_TIMEOUT/60000} minutes of inactivity</li>
-                <li>• Warning displayed 2 minutes before logout</li>
-                <li>• Configurable timeout via user menu → "Auto-logout settings"</li>
-                <li>• Green indicator shows when auto-logout is active</li>
-                <li>• Mouse/keyboard activity resets the timer</li>
-              </ul>
-              <div class="mt-2 p-2 bg-orange-100 rounded text-xs text-orange-600">
-                <strong>💡 Tip:</strong> In browser console, type <code>testAutoLogout()</code> to test the warning dialog.
-              </div>
             </div>
             
             <div class="text-center mt-6 pt-4 border-t">
@@ -6761,106 +6245,19 @@ if(document.getElementById('loginCancel')) document.getElementById('loginCancel'
 (function initNav(){
   const navbtns = qsa('.navbtn');
   function showPanel(id){
-    // Remove 'tab-' prefix if present for template lookup
-    const templateId = id.replace('tab-', '');
-    
-    // Update all navigation buttons
+    qsa('.panel').forEach(p => { if(p.id === id) p.classList.remove('hidden'); else p.classList.add('hidden'); });
     navbtns.forEach(b => {
       const active = b.dataset.target===id;
       b.classList.toggle('bg-sky-50', active);
       b.classList.toggle('active', active);
       if(active) b.setAttribute('aria-current','true'); else b.removeAttribute('aria-current');
     });
-    
-    // Update content header
-    updateContentHeader(templateId, id);
-    
-    // Load content into main area
-    loadTabContent(templateId);
-    
-    // Update breadcrumb
     const bc = $('breadcrumb-current');
     const activeBtn = document.querySelector('.navbtn[data-target="'+id+'"]');
     if(bc) bc.textContent = activeBtn ? (activeBtn.dataset.label || activeBtn.title || activeBtn.textContent.trim()) : id;
     
-    // Initialize specific tab functionality
-    initializeSpecificTabFeatures(id, templateId);
-  }
-  
-  // Helper functions for merged tab functionality
-  function updateContentHeader(templateId, tabId) {
-    const contentTitle = document.getElementById('contentTitle');
-    const contentSubtitle = document.getElementById('contentSubtitle');
-    const activeTabName = document.getElementById('activeTabName');
-    
-    // Define content information for each tab
-    const tabInfo = {
-      'dashboard': { title: 'Dashboard', subtitle: 'Real-time healthcare overview & quick actions' },
-      'departments': { title: 'Departments & Beds', subtitle: 'Hospital departments and bed management' },
-      'info': { title: 'Patient Information', subtitle: 'Patient demographics and basic information' },
-      'id': { title: 'Identification & Insurance', subtitle: 'Patient ID verification and insurance details' },
-      'history': { title: 'Medical History', subtitle: 'Patient medical history and background' },
-      'physical': { title: 'Physical Assessment', subtitle: 'Physical examination and assessment notes' },
-      'assessment': { title: 'Treatment Plan', subtitle: 'Treatment planning and care coordination' },
-      'labs': { title: 'Laboratory & Diagnostics', subtitle: 'Lab results and diagnostic imaging' },
-      'meds': { title: 'Medications & IV Orders', subtitle: 'Medication management and IV administration' },
-      'vitals': { title: 'Vitals & Monitoring', subtitle: 'Vital signs and patient monitoring' },
-      'nurse': { title: 'Nurse Notes', subtitle: 'FDAR nursing documentation' },
-      'doctor': { title: 'Doctor Notes', subtitle: 'Physician notes and assessments' },
-      'messages': { title: 'Clinical Messages', subtitle: 'Clinical alerts and communications' },
-      'admission': { title: 'Patient Admission', subtitle: 'Patient registration and admission process' },
-      'plan': { title: 'Discharge Planning', subtitle: 'Discharge planning and care transitions' },
-      'staff': { title: 'Staff Management', subtitle: 'Healthcare staff administration' }
-    };
-
-    const info = tabInfo[templateId] || { title: 'Healthcare Management', subtitle: 'Electronic Health Record System' };
-    
-    if (contentTitle) contentTitle.textContent = info.title;
-    if (contentSubtitle) contentSubtitle.textContent = info.subtitle;
-    if (activeTabName) activeTabName.textContent = info.title;
-  }
-
-  function loadTabContent(templateId) {
-    const dynamicContent = document.getElementById('dynamicContent');
-    const template = document.getElementById(`template-${templateId}`);
-    
-    if (!dynamicContent) return;
-    
-    // Clear existing content
-    dynamicContent.innerHTML = '';
-    
-    if (template) {
-      // Clone and insert template content
-      const content = template.cloneNode(true);
-      content.id = `active-${templateId}`;
-      content.classList.remove('tab-template');
-      content.classList.add('active-content');
-      dynamicContent.appendChild(content);
-    } else {
-      // Show existing tab content if template doesn't exist
-      const existingPanel = document.getElementById(`tab-${templateId}`);
-      if (existingPanel) {
-        const content = existingPanel.cloneNode(true);
-        content.id = `active-${templateId}`;
-        content.classList.remove('panel', 'hidden');
-        content.classList.add('active-content');
-        dynamicContent.appendChild(content);
-      } else {
-        // Show placeholder for tabs without content
-        dynamicContent.innerHTML = `
-          <div class="p-8 rounded-2xl glass soft-shadow text-center">
-            <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center text-2xl">📋</div>
-            <h3 class="text-xl font-semibold text-slate-800 mb-2">Content Loading</h3>
-            <p class="text-slate-600">This section is being prepared for you...</p>
-          </div>
-        `;
-      }
-    }
-  }
-
-  function initializeSpecificTabFeatures(tabId, templateId) {
     // Initialize staff management system when staff tab is shown
-    if(tabId === 'tab-staff') {
+    if(id === 'tab-staff') {
       console.log('🏥 Staff tab activated - checking system...');
       if(!window.staffSystem) {
         console.log('🔄 Initializing staff system on tab switch...');
@@ -6876,26 +6273,10 @@ if(document.getElementById('loginCancel')) document.getElementById('loginCancel'
         }
       } else {
         console.log('✅ Staff system already available');
+        // Refresh the staff display
         window.staffSystem.updateStaffStats();
         window.staffSystem.renderStaffList();
       }
-    }
-    
-    // Initialize dashboard stats
-    if(tabId === 'tab-dashboard') {
-      updateDashboardStats();
-    }
-  }
-
-  function updateDashboardStats() {
-    const totalPatients = document.getElementById('totalPatients');
-    const activeCases = document.getElementById('activeCases');
-    
-    if (totalPatients && window.patients) {
-      totalPatients.textContent = window.patients.length;
-    }
-    if (activeCases && window.patients) {
-      activeCases.textContent = window.patients.filter(p => p.status === 'active').length;
     }
   }
   navbtns.forEach(b => b.addEventListener('click', ()=> showPanel(b.dataset.target)));
@@ -6929,7 +6310,6 @@ const userMenuBtn = document.getElementById('userMenuBtn');
 const userMenu = document.getElementById('userMenu');
 const userSignOut = document.getElementById('userSignOut');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
-const enableNotificationsBtn = document.getElementById('enableNotificationsBtn');
 
 function closeUserMenu(){ if(userMenu) userMenu.classList.add('hidden'); }
 function openUserMenu(){ if(userMenu) userMenu.classList.remove('hidden'); }
@@ -6943,75 +6323,16 @@ document.addEventListener('click', ()=> closeUserMenu());
 if(userMenu) userMenu.addEventListener('click', e=> e.stopPropagation());
 
 // wire sign out in the dropdown
-if(userSignOut){ userSignOut.addEventListener('click', async ()=>{ try{ stopInactivityTracking(); await auth.signOut(); closeUserMenu(); showToast('Signed out', 'info'); }catch(e){ console.error(e); showToast('Sign out failed','error'); } }); }
+if(userSignOut){ userSignOut.addEventListener('click', async ()=>{ try{ await auth.signOut(); closeUserMenu(); showToast('Signed out', 'info'); }catch(e){ console.error(e); showToast('Sign out failed','error'); } }); }
 
 // theme toggle: simple class toggle on <html>
 if(themeToggleBtn){ themeToggleBtn.addEventListener('click', ()=>{ document.documentElement.classList.toggle('dark'); closeUserMenu(); }); }
-
-// Notifications permission handling via explicit user gesture
-function refreshNotificationMenuItem(){
-  if(!enableNotificationsBtn) return;
-  if(!('Notification' in window)){
-    enableNotificationsBtn.classList.add('hidden');
-    return;
-  }
-  const state = Notification.permission;
-  if(state === 'granted'){
-    enableNotificationsBtn.textContent = '🔔 Notifications Enabled';
-    enableNotificationsBtn.disabled = true;
-    enableNotificationsBtn.classList.add('opacity-60');
-  } else if(state === 'denied'){
-    enableNotificationsBtn.textContent = '🔕 Notifications Blocked (Browser)';
-    enableNotificationsBtn.disabled = true;
-    enableNotificationsBtn.classList.add('opacity-60');
-  } else {
-    enableNotificationsBtn.textContent = '🔔 Enable Notifications';
-    enableNotificationsBtn.disabled = false;
-    enableNotificationsBtn.classList.remove('opacity-60');
-    enableNotificationsBtn.classList.remove('hidden');
-  }
-}
-
-if(enableNotificationsBtn){
-  enableNotificationsBtn.addEventListener('click', async ()=>{
-    try{
-      if(!('Notification' in window)){
-        showToast('Notifications are not supported by this browser', 'error');
-        return;
-      }
-      const permission = await Notification.requestPermission();
-      console.log('🔔 Notification permission (via menu):', permission);
-      if(permission === 'granted'){
-        showToast('Desktop notifications enabled', 'success');
-        // Ensure messaging system is initialized if not already
-        try {
-          if (!window.clinicalMessaging && typeof ClinicalMessagingSystem !== 'undefined') {
-            window.clinicalMessaging = new ClinicalMessagingSystem();
-            console.log('✅ Messaging system initialized after enabling notifications');
-          }
-        } catch (err) {
-          console.warn('Failed to initialize messaging after permission grant:', err);
-        }
-      } else if(permission === 'denied'){
-        showToast('Notifications blocked in browser settings', 'warning');
-      }
-      refreshNotificationMenuItem();
-      closeUserMenu();
-    }catch(e){
-      console.error('Notification permission error:', e);
-      showToast('Could not enable notifications', 'error');
-    }
-  });
-  // Initialize label on load
-  refreshNotificationMenuItem();
-}
 
 // add top-right "Sign out" button handler (header)
 const headerLogout = document.getElementById('btnLogout');
 if(headerLogout){
   headerLogout.addEventListener('click', async ()=>{
     try{
-      stopInactivityTracking();
       await auth.signOut();
       // clear UI state
       selectedPatientId = null;
@@ -7024,15 +6345,6 @@ if(headerLogout){
       console.error(e);
       showToast('Logout failed', 'error');
     }
-  });
-}
-
-// Auto-logout settings handler
-const autoLogoutSettingsBtn = document.getElementById('autoLogoutSettings');
-if (autoLogoutSettingsBtn) {
-  autoLogoutSettingsBtn.addEventListener('click', () => {
-    showAutoLogoutSettings();
-    closeUserMenu();
   });
 }
 
@@ -9971,58 +9283,4 @@ window.showAddStaffModal = function() {
   if (window.staffSystem) {
     window.staffSystem.showAddStaffModal();
   }
-}
-
-// Sidebar Toggle Functionality
-function initializeSidebarToggle() {
-  const sidebarToggle = document.getElementById('sidebarToggle');
-  const sidebarContainer = document.getElementById('sidebarContainer');
-  const sidebarContent = document.getElementById('sidebarContent');
-  
-  // Sidebar collapse/expand
-  if (sidebarToggle && sidebarContainer) {
-    sidebarToggle.addEventListener('click', function() {
-      sidebarContainer.classList.toggle('collapsed');
-      
-      // Update main content area when sidebar collapses
-      const mainSection = document.querySelector('main .grid > section');
-      if (mainSection) {
-        if (sidebarContainer.classList.contains('collapsed')) {
-          mainSection.style.gridColumn = '1 / -1';
-        } else {
-          mainSection.style.gridColumn = 'auto';
-        }
-      }
-    });
-  }
-  
-  // Section toggle functionality
-  const sectionToggles = document.querySelectorAll('.section-toggle');
-  sectionToggles.forEach(toggle => {
-    toggle.addEventListener('click', function() {
-      const sectionName = this.dataset.section;
-      const sectionContent = document.querySelector(`[data-section-content="${sectionName}"]`);
-      
-      if (sectionContent) {
-        sectionContent.classList.toggle('collapsed');
-        this.classList.toggle('collapsed');
-      }
-    });
-  });
-  
-  // Initialize all sections as expanded by default
-  const allSections = document.querySelectorAll('.nav-section-content');
-  allSections.forEach(section => {
-    section.classList.remove('collapsed');
-  });
-  
-  // Add keyboard navigation for accessibility
-  sectionToggles.forEach(toggle => {
-    toggle.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        this.click();
-      }
-    });
-  });
 }
